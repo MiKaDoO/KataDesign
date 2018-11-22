@@ -7,25 +7,30 @@ module Helpers =
 
 module Pipeline =
     type Read<'a> = Read of 'a
+    type Filtered<'a> = Filtered of 'a
     type Transformed<'a> = Transformed of 'a
     type Written = bool
 
     type Path = string
 
     type Reader<'a> = Path -> 'a
+    type Filter<'a> = 'a -> 'a
     type Transformer<'a, 'b> = 'a -> 'b
     type Writer<'a> = 'a -> Path -> bool
 
     let private readWith (fn: Reader<'a>) = fn >> Read
 
+    let private filterWith (fn: Filter<'a>) = function
+        | Read d -> d |> fn |> Filtered
+
     let private transformWith (fn: Transformer<'a, 'b>) = function 
-        | Read d -> d |> fn |> Transformed
+        | Filtered d -> d |> fn |> Transformed
      
     let private writeWith (fn: Writer<'a>) = function
         | Transformed d -> d |> fn
 
-    let buildPipeline (reader: Reader<'a>) (transformer: Transformer<'a, 'b>) (writer: Writer<'b>) = 
-        readWith reader >> transformWith transformer >> writeWith writer
+    let buildPipeline (reader: Reader<'a>) (filter: Filter<'a>) (transformer: Transformer<'a, 'b>) (writer: Writer<'b>) = 
+        readWith reader >> filterWith filter >> transformWith transformer >> writeWith writer
 
 module PipelineCSV =
     open Helpers
@@ -39,6 +44,8 @@ module PipelineCSV =
     let private getColumns (line: string) = line |> split ';'
 
     let read (path: string) = path |> readFile |> getLines
+
+    let filter (lines: string list) = lines |> List.take 2
 
     let transform (lines: string list) = 
         {
@@ -63,6 +70,6 @@ module Program =
     open Pipeline
     open PipelineCSV
 
-    let pipeline = buildPipeline read transform write 
+    let pipeline = buildPipeline read filter transform write
     
     (__SOURCE_DIRECTORY__ + "/data.csv", __SOURCE_DIRECTORY__ + "/data.txt") ||> pipeline
