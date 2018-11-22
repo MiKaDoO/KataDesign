@@ -8,11 +8,13 @@ module Helpers =
 module Pipeline =
     type PipelineInstruction<'a, 'b, 'c> = 
         | Read of string * ('b -> 'a)
+        | Filter of 'b * ('b -> 'a)
         | Transform of 'b * ('c -> 'a)
         | Write of 'c * string * (bool -> 'a)
 
     let mapI f = function
         | Read (src, next) -> Read (src, next >> f)
+        | Filter (data, next) -> Filter (data, next >> f)
         | Transform (data, next) -> Transform (data, next >> f)
         | Write (data, dest, next) -> Write (data, dest, next >> f)
 
@@ -32,14 +34,17 @@ module Pipeline =
 
     let private write dest data = Free (Write (dest, data, Pure))
 
+    let private filter data = Free (Filter (data, Pure))
+
     let private transform data = Free (Transform (data, Pure))
 
     let private read src = Free (Read (src, Pure))
 
-    let buildInterpreter read transform write = 
+    let buildInterpreter read filter transform write = 
         let rec interpret = function
             | Pure x -> x
             | Free (Read (src, next)) -> src |> read |> next |> interpret
+            | Free (Filter  (data, next)) -> data |> filter |> next |> interpret
             | Free (Transform  (data, next)) -> data |> transform |> next |> interpret
             | Free (Write (data, dest, next)) -> data |> write dest |> next |> interpret
 
@@ -50,7 +55,8 @@ module Pipeline =
     let run src dest = 
         pipeline {
             let! data = read src
-            let! transform = transform data
+            let! filteredData = filter data
+            let! transform = transform filteredData
             return! write transform dest 
         }
 
@@ -66,6 +72,8 @@ module PipelineCSV =
     let private getColumns (line: string) = line |> split ';'
 
     let read (path: string) = path |> readFile |> getLines
+
+    let filter (lines: string list) = lines |> List.take 2
 
     let transform (lines: string list) = 
         {
@@ -90,6 +98,6 @@ module Program =
     open Pipeline
     open PipelineCSV
 
-    let interpreter = buildInterpreter read transform write
+    let interpreter = buildInterpreter read filter transform write
 
     run "src" "dest" |> interpreter
