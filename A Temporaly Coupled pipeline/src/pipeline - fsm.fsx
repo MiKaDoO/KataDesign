@@ -9,18 +9,21 @@ module Pipeline =
     type State<'a, 'b> = 
     | Ready of string
     | Read of 'a
+    | Filtered of 'a
     | Transformed of 'b
     | Written of bool
 
     type Steps<'a, 'b> = 
     | Reader of (string -> 'a)
+    | Filter of ('a -> 'a)
     | Transformer of ('a -> 'b)
     | Writer of ('b -> bool)
 
     let rec apply (state: State<'a, 'b>) (step: Steps<'a, 'b>) = 
         match state, step with
         | Ready path, Reader next -> path |> next |> Read 
-        | Read data, Transformer next -> data |> next |> Transformed 
+        | Read data, Filter next -> data |> next |> Filtered 
+        | Filtered data, Transformer next -> data |> next |> Transformed 
         | Transformed data, Writer next -> data |> next |> Written
         | _, _ -> state
 
@@ -36,6 +39,8 @@ module PipelineCSV =
     let private getColumns (line: string) = line |> split ';'
 
     let read (path: string) = path |> readFile |> getLines
+
+    let filter (lines: string list) = lines |> List.take 2
 
     let transform (lines: string list) = 
         {
@@ -65,6 +70,7 @@ module Program =
 
     let pipeline = [
         read |> Reader
+        filter |> Filter
         transform |> Transformer
         write dest |> Writer
     ] 
